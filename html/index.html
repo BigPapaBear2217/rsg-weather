@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSG Weather System</title>
+    
+    <!-- CDN Libraries - No build system needed -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Local Styles -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="weather-app" class="weather-app hidden">
+        <!-- Header -->
+        <div class="weather-header">
+            <div class="header-content">
+                <h1 class="app-title">
+                    <i class="fas fa-cloud-sun"></i>
+                    Weather System
+                </h1>
+                <button id="close-btn" class="close-button">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Weather Display -->
+        <div class="weather-main">
+            <div class="current-weather">
+                <div class="weather-icon-container">
+                    <i id="weather-icon" class="fas fa-sun weather-icon"></i>
+                    <div class="weather-animation" id="weather-animation"></div>
+                </div>
+                
+                <div class="weather-info">
+                    <div class="temperature-display">
+                        <span id="temperature" class="temperature">22</span>
+                        <span id="temp-unit" class="temp-unit">°C</span>
+                    </div>
+                    <div class="weather-description">
+                        <span id="weather-name" class="weather-name">Sunny</span>
+                        <span id="zone-name" class="zone-name">Valentine</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Weather Details -->
+            <div class="weather-details">
+                <div class="detail-item">
+                    <i class="fas fa-eye"></i>
+                    <span class="detail-label">Humidity</span>
+                    <span id="humidity" class="detail-value">45%</span>
+                </div>
+                <div class="detail-item">
+                    <i class="fas fa-wind"></i>
+                    <span class="detail-label">Wind Speed</span>
+                    <span id="wind-speed" class="detail-value">12 km/h</span>
+                </div>
+                <div class="detail-item">
+                    <i class="fas fa-home"></i>
+                    <span class="detail-label">Shelter</span>
+                    <span id="shelter-status" class="detail-value">No</span>
+                </div>
+                <div class="detail-item">
+                    <i class="fas fa-tshirt"></i>
+                    <span class="detail-label">Warmth</span>
+                    <span id="clothing-warmth" class="detail-value">+5°C</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Weather Forecast -->
+        <div class="forecast-section">
+            <h3 class="section-title">
+                <i class="fas fa-calendar-alt"></i>
+                Weather Forecast
+            </h3>
+            <div class="forecast-container" id="forecast-container">
+                <!-- Forecast items will be dynamically generated -->
+            </div>
+        </div>
+
+        <!-- Weather Map -->
+        <div class="weather-map-section">
+            <h3 class="section-title">
+                <i class="fas fa-map"></i>
+                Regional Weather
+            </h3>
+            <div class="weather-zones">
+                <div class="zone-item" data-zone="valentine">
+                    <div class="zone-header">
+                        <span class="zone-title">Valentine</span>
+                        <i class="fas fa-sun zone-weather-icon"></i>
+                    </div>
+                    <div class="zone-temp">22°C</div>
+                </div>
+                <div class="zone-item" data-zone="strawberry">
+                    <div class="zone-header">
+                        <span class="zone-title">Strawberry</span>
+                        <i class="fas fa-cloud zone-weather-icon"></i>
+                    </div>
+                    <div class="zone-temp">18°C</div>
+                </div>
+                <div class="zone-item" data-zone="saint_denis">
+                    <div class="zone-header">
+                        <span class="zone-title">Saint Denis</span>
+                        <i class="fas fa-cloud-rain zone-weather-icon"></i>
+                    </div>
+                    <div class="zone-temp">24°C</div>
+                </div>
+                <div class="zone-item" data-zone="armadillo">
+                    <div class="zone-header">
+                        <span class="zone-title">Armadillo</span>
+                        <i class="fas fa-sun zone-weather-icon"></i>
+                    </div>
+                    <div class="zone-temp">35°C</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div class="settings-section">
+            <h3 class="section-title">
+                <i class="fas fa-cog"></i>
+                Settings
+            </h3>
+            <div class="settings-grid">
+                <div class="setting-item">
+                    <label class="setting-label">
+                        <input type="checkbox" id="notifications-toggle" checked>
+                        <span class="checkmark"></span>
+                        Weather Notifications
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label class="setting-label">
+                        <select id="temp-unit-select" class="setting-select">
+                            <option value="celsius">Celsius (°C)</option>
+                            <option value="fahrenheit">Fahrenheit (°F)</option>
+                        </select>
+                        Temperature Unit
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label class="setting-label">
+                        <input type="checkbox" id="effects-toggle" checked>
+                        <span class="checkmark"></span>
+                        Weather Effects
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+            <button id="refresh-btn" class="action-button primary">
+                <i class="fas fa-sync-alt"></i>
+                Refresh
+            </button>
+            <button id="forecast-btn" class="action-button secondary">
+                <i class="fas fa-chart-line"></i>
+                Extended Forecast
+            </button>
+            <button id="save-settings-btn" class="action-button success">
+                <i class="fas fa-save"></i>
+                Save Settings
+            </button>
+        </div>
+    </div>
+
+    <!-- Compact HUD Display (always visible when enabled) -->
+    <div id="weather-hud" class="weather-hud">
+        <div class="hud-content">
+            <div class="hud-weather">
+                <i id="hud-weather-icon" class="fas fa-sun"></i>
+                <span id="hud-temperature" class="hud-temp">22°C</span>
+            </div>
+            <div class="hud-effects" id="hud-effects">
+                <!-- Dynamic weather effect indicators -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Weather Particles Container -->
+    <div id="weather-particles" class="weather-particles">
+        <!-- Animated weather particles will be generated here -->
+    </div>
+
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="loading-content">
+            <div class="loading-spinner">
+                <i class="fas fa-cloud-sun fa-spin"></i>
+            </div>
+            <p class="loading-text">Loading Weather Data...</p>
+        </div>
+    </div>
+
+    <!-- Notification Container -->
+    <div id="notification-container" class="notification-container">
+        <!-- Dynamic notifications will appear here -->
+    </div>
+
+    <!-- JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
