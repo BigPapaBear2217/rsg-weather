@@ -28,8 +28,11 @@ $(document).ready(function() {
     };
     
     let weatherParticles = [];
+    
+    // Global UI state tracker
+    let isUiVisible = false;
     let particleInterval = null;
-    const resourceName = window.location.host;
+    const resourceName = (typeof GetParentResourceName === 'function') ? GetParentResourceName() : 'rsg-weather';
     
     // Weather icon mappings
     const weatherIcons = {
@@ -181,8 +184,6 @@ $(document).ready(function() {
     function updateWeatherDisplay(data) {
         if (!data) return;
         
-        debugLog(`Updating weather display: ${data.weather} ${data.temperature}${data.temperatureUnit}`);
-        
         // Update main weather icon
         const iconClass = getWeatherIcon(data.weather);
         $('#weather-icon').removeClass().addClass('weather-icon ' + iconClass.split(' ').slice(-1)[0]);
@@ -283,7 +284,7 @@ $(document).ready(function() {
     
     // Close button
     $('#close-btn').click(function() {
-        hideWeatherApp();
+        exitEditMode();
     });
     
     // Settings toggles
@@ -342,29 +343,22 @@ $(document).ready(function() {
     
     // ESC key to close
     $(document).keyup(function(e) {
-        if (e.keyCode === 27) { // ESC
-            if (!$('#weather-app').hasClass('hidden')) {
-                hideWeatherApp();
-            }
+        if (e.keyCode === 27 && isUiVisible) { // ESC
+            console.log('[RSG-Weather-NUI] ESC key pressed, calling exitEditMode');
+            exitEditMode();
         }
     });
     
     // Click outside to close
     $(document).mouseup(function(e) {
+        if (!isUiVisible) return;
+        
         var container = $("#weather-app");
         if (!container.is(e.target) && container.has(e.target).length === 0) {
-            if (!$('#weather-app').hasClass('hidden')) {
-                hideWeatherApp();
-            }
+            exitEditMode();
         }
     });
     
-    // Window blur event (in case of alt-tab or other interruptions)
-    $(window).blur(function() {
-        if (!$('#weather-app').hasClass('hidden')) {
-            hideWeatherApp();
-        }
-    });
     
     // ==========================================
     //              NUI MESSAGE HANDLERS
@@ -375,10 +369,21 @@ $(document).ready(function() {
         
         switch (data.type) {
             case 'toggleVisibility':
+                isUiVisible = data.visible;
                 if (data.visible) {
-                    showWeatherApp();
+                    // Show the app
+                    $('#loading-screen').fadeOut(300);
+                    $('#weather-app').removeClass('hidden').hide().fadeIn(300);
+                    
+                    // Request fresh data when opening
+                    postNUI('requestWeatherUpdate');
+                    postNUI('requestForecast', { hours: 6 });
+                    postNUI('requestZoneWeather');
                 } else {
-                    hideWeatherApp();
+                    // Hide the app
+                    $('#weather-app').fadeOut(300, function() {
+                        $(this).addClass('hidden').hide();
+                    });
                 }
                 break;
                 
@@ -415,30 +420,51 @@ $(document).ready(function() {
     function showWeatherApp() {
         $('#loading-screen').fadeOut(300);
         $('#weather-app').removeClass('hidden').hide().fadeIn(300);
-        $('body').css('cursor', 'default');
+        
+        // Update UI state tracker
+        isUiVisible = true;
         
         // Request fresh data when opening
         postNUI('requestWeatherUpdate');
         postNUI('requestForecast', { hours: 6 });
-        
-        // Debug log
-        console.log('[RSG-Weather-NUI] Menu opened');
     }
     
-    function hideWeatherApp() {
-        // Ensure app is actually hidden
+    // Function to exit edit mode properly (like RSG HUD)
+    function exitEditMode() {
+        console.log('[RSG-Weather-NUI] exitEditMode called');
+        isUiVisible = false;
+        
+        // Hide the UI completely
         $('#weather-app').fadeOut(300, function() {
             $(this).addClass('hidden').hide();
         });
         
-        // Ensure NUI focus is released
-        $.post(`https://${window.location.host}/closeUI`, JSON.stringify({}));
+        // Notify client to close UI using closeUI callback
+        console.log('[RSG-Weather-NUI] Sending closeUI to client');
         
-        // Release mouse cursor
-        $.post(`https://${window.location.host}/releaseCursor`, JSON.stringify({}));
-        
-        // Debug log
-        console.log('[RSG-Weather-NUI] Menu closed and focus released');
+        // Send multiple events to ensure one works
+        // First try closeUI (our primary method)
+        const resName = (typeof GetParentResourceName === 'function') ? GetParentResourceName() : 'rsg-weather';
+        fetch(`https://${resName}/closeUI`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ closed: true })
+        }).then((resp) => {
+            if (resp.ok) {
+                console.log('[RSG-Weather-NUI] closeUI sent successfully');
+            } else {
+                console.warn('[RSG-Weather-NUI] closeUI responded with status', resp.status);
+            }
+        }).catch((error) => {
+            console.warn('[RSG-Weather-NUI] Error sending closeUI:', error);
+            
+            // If closeUI fails, try uiClosed as backup
+            fetch(`https://${resName}/uiClosed`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ closed: true })
+            }).catch(err => console.warn('[RSG-Weather-NUI] Backup uiClosed failed:', err));
+        });
     }
     
     function applySettings() {
@@ -462,8 +488,6 @@ $(document).ready(function() {
     // ==========================================
     
     function initializeApp() {
-        debugLog('Initializing RSG Weather NUI');
-        
         // Hide loading screen after initialization
         setTimeout(() => {
             $('#loading-screen').fadeOut(500);
@@ -474,12 +498,10 @@ $(document).ready(function() {
         
         // Set up periodic updates for HUD
         setInterval(() => {
-            if (currentWeatherData && !$('#weather-app').hasClass('hidden')) {
+            if (currentWeatherData && isUiVisible && !$('#weather-app').hasClass('hidden')) {
                 // Subtle updates can go here
             }
         }, 30000); // Every 30 seconds
-        
-        debugLog('RSG Weather NUI initialized successfully');
     }
     
     // ==========================================
@@ -523,8 +545,6 @@ $(document).ready(function() {
     
     // Initialize the application
     initializeApp();
-    
-    debugLog('RSG Weather System NUI loaded');
 });
 
 // ==========================================
@@ -561,7 +581,7 @@ window.addEventListener('error', function(e) {
     console.error('[RSG-Weather-NUI Error]', e.error);
     
     // Could send error report to server
-    $.post(`https://${window.location.host}/reportError`, JSON.stringify({
+    $.post(`https://${resourceName}/reportError`, JSON.stringify({
         message: e.error.message,
         stack: e.error.stack,
         timestamp: Date.now()

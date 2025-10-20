@@ -327,6 +327,11 @@ RegisterNetEvent('rsg-weather:server:requestForecast', function(hours)
     TriggerClientEvent('rsg-weather:client:forecastUpdate', src, forecast)
 end)
 
+RegisterNetEvent('rsg-weather:server:requestZoneWeather', function()
+    local src = source
+    TriggerClientEvent('rsg-weather:client:updateZones', src, zoneWeatherData)
+end)
+
 RegisterNetEvent('rsg-weather:server:playerZoneChange', function(zoneName)
     local src = source
     UpdatePlayerWeatherEffects(src)

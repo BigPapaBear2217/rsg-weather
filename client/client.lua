@@ -38,14 +38,16 @@ local function GetWeatherHash(weatherType)
 end
 
 local function IsPlayerInInterior()
-    return GetInteriorFromEntity(PlayerPedId()) ~= 0
+    local ped = PlayerPedId()
+    local interiorId = GetInteriorFromEntity(ped)
+    return interiorId ~= 0 and interiorId ~= nil
 end
 
 local function CheckShelterStatus()
     local ped = PlayerPedId()
     local coords = GetEntityCoords(ped)
     
-    -- Check if in interior
+    -- Check if in interior (improved detection)
     if IsPlayerInInterior() then
         return true
     end
@@ -99,9 +101,7 @@ local function CalculateClothingWarmth()
             warmth = warmth + (Config.PlayerEffects.clothingSystem.warmthValues.boats[boots] or 2)
         end
     else
-        -- Folosim o metodă alternativă pentru RedM
-        -- În RedM putem folosi GetPedGroupIndex sau alte metode native
-        -- Pentru moment, returnăm o valoare implicită
+
         DebugPrint("GetPedDrawableVariation not available in RedM, using default warmth calculation")
         warmth = 5 -- Valoare implicită
     end
@@ -258,7 +258,7 @@ local function UpdateHUD()
         forecast = weatherForecast
     }
     
-    -- Send to NUI
+    -- Always send to NUI for HUD updates
     SendNUIMessage({
         type = 'updateWeather',
         data = hudData
@@ -335,6 +335,14 @@ RegisterNetEvent('rsg-weather:client:forecastUpdate', function(forecast)
     UpdateHUD()
 end)
 
+RegisterNetEvent('rsg-weather:client:updateZones', function(zones)
+    -- Send zone data to NUI
+    SendNUIMessage({
+        type = 'updateZones',
+        zones = zones
+    })
+end)
+
 RegisterNetEvent('rsg-weather:client:seasonUpdate', function(season)
     DebugPrint('Season changed to: ' .. season)
     -- Use lib.notify instead of RSGCore.Functions.Notify
@@ -373,7 +381,15 @@ end)
 
 RegisterNUICallback('toggleWeatherUI', function(data, cb)
     nuiVisible = not nuiVisible
-    SetNuiFocus(nuiVisible, nuiVisible)
+    
+    -- Simple NUI focus management like RSG HUD
+    if nuiVisible then
+        SetNuiFocus(true, true)
+        SetNuiFocusKeepInput(false)
+    else
+        SetNuiFocus(false, false)
+        SetNuiFocusKeepInput(false)
+    end
     
     -- Debug print
     print("RSG-Weather: Menu toggled - Visible: " .. tostring(nuiVisible))
@@ -383,6 +399,11 @@ RegisterNUICallback('toggleWeatherUI', function(data, cb)
         visible = nuiVisible
     })
     
+    if nuiVisible then
+        TriggerServerEvent('rsg-weather:server:requestForecast', 6)
+        TriggerServerEvent('rsg-weather:server:requestZoneWeather')
+    end
+    
     cb('ok')
 end)
 
@@ -391,43 +412,135 @@ RegisterNUICallback('requestForecast', function(data, cb)
     cb('ok')
 end)
 
+RegisterNUICallback('requestZoneWeather', function(data, cb)
+    TriggerServerEvent('rsg-weather:server:requestZoneWeather')
+    cb('ok')
+end)
+
 RegisterNUICallback('saveSettings', function(data, cb)
     TriggerServerEvent('rsg-weather:server:savePlayerSettings', data)
     cb('ok')
 end)
 
-RegisterNUICallback('closeUI', function(data, cb)
+-- Central function to handle UI closing
+local function ForceCloseWeatherUI()
+    -- Debug print to confirm function is called
+    print("RSG-Weather: ForceCloseWeatherUI function called")
+    
+    -- Properly close UI and release all controls
     nuiVisible = false
     SetNuiFocus(false, false)
+    SetNuiFocusKeepInput(false)
     
-    -- Unfreeze player character
-    local playerPed = PlayerPedId()
-    FreezeEntityPosition(playerPed, false)
+    -- Ensure player is unfrozen
+    FreezeEntityPosition(PlayerPedId(), false)
+    
+    for i = 0, 31 do
+        EnableControlAction(0, i, true)
+    end
+
+    Citizen.InvokeNative(0x9086DFD5D03B1FC6, 1) -- SET_CURSOR_SPRITE to normal
+    Citizen.InvokeNative(0xF2CA003F167E21D2, false) -- SET_MOUSE_CURSOR_ACTIVE to false
+    Citizen.InvokeNative(0xAAE7CE1D63167423) -- _CLEAR_CURSOR_STATE
     
     -- Debug print
-    print("RSG-Weather: Menu closed and player unfrozen")
-    
-    -- Additional safety measures
-    Citizen.InvokeNative(0xF4F2C0D4EE209E20, true) -- ENABLE_CONTROL_ACTION for all controls
-    Citizen.InvokeNative(0x9086DFD5D03B1FC6, 1) -- SET_CURSOR_SPRITE to normal
+    print("RSG-Weather: Menu closed and all controls restored")
     
     SendNUIMessage({
         type = 'toggleVisibility',
         visible = false
     })
     
+    -- Additional cleanup 
+    Citizen.CreateThread(function()
+        for i = 1, 10 do
+            SetNuiFocus(false, false)
+            SetNuiFocusKeepInput(false)
+            Wait(10)
+        end
+        Wait(50)
+        Citizen.InvokeNative(0x9086DFD5D03B1FC6, 1) -- SET_CURSOR_SPRITE to normal
+        Citizen.InvokeNative(0xF2CA003F167E21D2, false) -- SET_MOUSE_CURSOR_ACTIVE to false
+        Citizen.InvokeNative(0xAAE7CE1D63167423) -- _CLEAR_CURSOR_STATE
+        print("RSG-Weather: Additional cursor cleanup completed")
+    end)
+end
+
+-- Register event to force close UI
+RegisterNetEvent("RSG-Weather:ForceCloseUI")
+AddEventHandler("RSG-Weather:ForceCloseUI", function()
+    ForceCloseWeatherUI()
+end)
+
+RegisterNUICallback('closeUI', function(data, cb)
+    -- Debug print to confirm callback is received
+    print("RSG-Weather: closeUI callback received from JavaScript")
+    print("RSG-Weather: Data received: " .. json.encode(data))
+    
+    -- Toggle nuiVisible to false just like the /weather command does
+    nuiVisible = false
+    
+    -- Force close UI and ensure cursor is hidden
+    ForceCloseWeatherUI()
+    
+    -- Return callback immediately to prevent hanging
     cb('ok')
 end)
 
-RegisterNUICallback('releaseCursor', function(data, cb)
-    -- Additional cursor release
-    Citizen.InvokeNative(0x9086DFD5D03B1FC6, 1) -- SET_CURSOR_SPRITE to normal
-    Citizen.InvokeNative(0xF2CA003F167E21D2, false) -- SET_MOUSE_CURSOR_ACTIVE to false
+RegisterNUICallback('uiClosed', function(data, cb)
+    -- Debug print to confirm callback is received
+    print("RSG-Weather: uiClosed callback received from JavaScript")
+    print("RSG-Weather: Data received: " .. json.encode(data))
+
+    -- Use centralized close routine for consistency
+    ForceCloseWeatherUI()
+
+    -- Return callback immediately
+    cb('ok')
+end)
+
+RegisterNetEvent('hud:client:toggleEditMode', function(enabled)
+    nuiVisible = enabled
     
-    -- Ensure player control is restored
-    Citizen.InvokeNative(0xF4F2C0D4EE209E20, true) -- ENABLE_CONTROL_ACTION for all controls
+    -- Simple NUI focus management like RSG HUD
+    if enabled then
+        SetNuiFocus(true, true)
+        SetNuiFocusKeepInput(false)
+    else
+        SetNuiFocus(false, false)
+        SetNuiFocusKeepInput(false)
+    end
+    
+    SendNUIMessage({
+        type = 'toggleVisibility',
+        visible = enabled
+    })
+end)
+
+RegisterNUICallback('toggleEditMode', function(data, cb)
+    -- Debug print to confirm callback is received
+    print("RSG-Weather: toggleEditMode callback received from JavaScript")
+    print("RSG-Weather: Data received: " .. json.encode(data))
+    
+    nuiVisible = data.enabled or false
+    
+    -- Simple NUI focus management like RSG HUD
+    if data.enabled then
+        SetNuiFocus(true, true)
+        SetNuiFocusKeepInput(false)
+    else
+        -- If toggleEditMode is called with enabled=false, redirect to closeUI for consistency
+        print("RSG-Weather: toggleEditMode with enabled=false, redirecting to closeUI handler")
+        -- Call closeUI callback directly to ensure consistent behavior
+        TriggerEvent("RSG-Weather:ForceCloseUI")
+    end
     
     cb('ok')
+    
+    SendNUIMessage({
+        type = 'toggleVisibility',
+        visible = data.enabled or false
+    })
 end)
 
 -- ==========================================
@@ -436,7 +549,16 @@ end)
 
 RegisterCommand('weather', function()
     nuiVisible = not nuiVisible
-    SetNuiFocus(nuiVisible, nuiVisible)
+    
+    -- Simple NUI focus management like RSG HUD
+    if nuiVisible then
+        SetNuiFocus(true, true)
+        SetNuiFocusKeepInput(false)
+    else
+        -- Use centralized function to ensure consistent behavior
+        ForceCloseWeatherUI()
+        return -- Exit early as ForceCloseWeatherUI handles everything
+    end
     
     -- Debug print
     print("RSG-Weather: Command executed - Menu visible: " .. tostring(nuiVisible))
@@ -448,6 +570,7 @@ RegisterCommand('weather', function()
     
     if nuiVisible then
         TriggerServerEvent('rsg-weather:server:requestForecast', 6)
+        TriggerServerEvent('rsg-weather:server:requestZoneWeather')
     end
 end, false)
 
@@ -455,7 +578,7 @@ end, false)
 if Config.AdminCommands.enabled then
     RegisterCommand(Config.AdminCommands.commands.setWeather, function(source, args)
         if #args < 1 then
-            RSGCore.Functions.Notify('Usage: /' .. Config.AdminCommands.commands.setWeather .. ' <weather_type>', 'error')
+            lib.notify({ title = 'Usage: /' .. Config.AdminCommands.commands.setWeather .. ' <weather_type>', type = 'error', duration = 5000 })
             return
         end
         
@@ -464,7 +587,7 @@ if Config.AdminCommands.enabled then
     
     RegisterCommand(Config.AdminCommands.commands.setTemp, function(source, args)
         if #args < 1 then
-            RSGCore.Functions.Notify('Usage: /' .. Config.AdminCommands.commands.setTemp .. ' <temperature>', 'error')
+            lib.notify({ title = 'Usage: /' .. Config.AdminCommands.commands.setTemp .. ' <temperature>', type = 'error', duration = 5000 })
             return
         end
         
@@ -571,7 +694,8 @@ CreateThread(function()
             UpdateHUD()
             Wait(Config.VisualEffects.hud.updateFrequency)
         else
-            Wait(30000) -- Default 30 second update if disabled
+            UpdateHUD() -- Always update HUD even if frequency is 0
+            Wait(10000) -- Default 10 second update if disabled
         end
     end
 end)
@@ -617,13 +741,14 @@ end)
 AddEventHandler('onResourceStop', function(resource)
     if resource == GetCurrentResourceName() then
         if nuiVisible then
+            nuiVisible = false
             SetNuiFocus(false, false)
+            SetNuiFocusKeepInput(false)
         end
+        FreezeEntityPosition(PlayerPedId(), false)
+        Citizen.InvokeNative(0x9086DFD5D03B1FC6, 1)
+        Citizen.InvokeNative(0xF2CA003F167E21D2, false)
+        Citizen.InvokeNative(0xAAE7CE1D63167423)
         SetPedMoveRateOverride(PlayerPedId(), 1.0)
-        -- Ensure cursor is released
-        Citizen.InvokeNative(0x9086DFD5D03B1FC6, 1) -- SET_CURSOR_SPRITE to normal
-        Citizen.InvokeNative(0xF2CA003F167E21D2, false) -- SET_MOUSE_CURSOR_ACTIVE to false
-        -- Ensure player controls are restored
-        Citizen.InvokeNative(0xF4F2C0D4EE209E20, true) -- ENABLE_CONTROL_ACTION for all controls
     end
 end)
